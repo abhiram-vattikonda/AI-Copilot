@@ -1,0 +1,41 @@
+{
+  "name": "ai-copilot",
+  "displayName": "AI Copilot",
+  "description": "Local AI-powered code completion using Ollama or cloud LLMs",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "aiCopilot.suggest",
+        "title": "AI: Analyze & suggest improvements"
+      },
+      {
+        "command": "aiCopilot.fix",
+        "title": "AI: Fix bugs in file"
+      }
+    ],
+    "configuration": {
+      "title": "AI Copilot",
+      "properties": {
+        "aiCopilot.backendUrl": {
+          "type": "string",
+          "default": "http://localhost:3000",
+          "description": "URL of the AI Copilot backend"
+        },
+        "aiCopilot.debounceMs": {
+          "type": "number",
+          "default": 800,
+          "description": "Debounce delay (ms) before triggering inline completions"
+        }
+      }
+    }
+  }
+}
