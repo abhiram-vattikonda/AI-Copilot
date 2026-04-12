@@ -27,6 +27,7 @@ STRICT OUTPUT RULES:
 - Return ONLY the raw source code of the fixed program.
 - Do NOT wrap the code in markdown fences (no triple backticks or language tags).
 - Do NOT add any explanation, headings, or text before or after the code.
+- Indecate the change line with a comment after the line about what you changed.
 
 --- code to fix ---
 ${code}
