@@ -39,9 +39,17 @@ const vscode = __importStar(require("vscode"));
 const completion_1 = require("./providers/completion");
 const diagnostics_1 = require("./providers/diagnostics");
 const api_1 = require("./services/api");
-function activate(ctx) {
-    // ── Inline completion provider (keeps ghost text working if VS Code allows it)
+const chatPanel_1 = require("./panels/chatPanel");
+const settingsPanel_1 = require("./panels/settingsPanel");
+const backendManager_1 = require("./services/backendManager");
+async function activate(ctx) {
+    // ── Auto-start the embedded backend ──────────────────────────
+    vscode.window.showInformationMessage("🚀 AI Copilot starting backend...");
+    await (0, backendManager_1.startBackend)(ctx.extensionUri, ctx);
+    // ── Inline completion provider ────────────────────────────────
     ctx.subscriptions.push(vscode.languages.registerInlineCompletionItemProvider({ pattern: "**" }, new completion_1.AICompletionProvider()));
+    // ── Chat sidebar ──────────────────────────────────────────────
+    ctx.subscriptions.push(vscode.window.registerWebviewViewProvider(chatPanel_1.ChatViewProvider.viewType, new chatPanel_1.ChatViewProvider(ctx.extensionUri)));
     // ── Auto-complete on typing pause ─────────────────────────────
     let typingTimer = null;
     let lastInsertedText = "";
@@ -49,7 +57,6 @@ function activate(ctx) {
         const editor = vscode.window.activeTextEditor;
         if (!editor || event.document !== editor.document)
             return;
-        // Clear previous timer on every keystroke
         if (typingTimer)
             clearTimeout(typingTimer);
         typingTimer = setTimeout(async () => {
@@ -59,14 +66,12 @@ function activate(ctx) {
             if (code === lastInsertedText)
                 return;
             try {
-                console.log("🟡 auto-triggering completion...");
                 await vscode.commands.executeCommand("editor.action.inlineSuggest.trigger");
-                console.log("🟢 suggestion triggered");
             }
             catch (err) {
-                console.error("🔴 auto-complete error:", err);
+                console.error("auto-complete error:", err);
             }
-        }, 1500); // 1.5 seconds after you stop typing
+        }, 1500);
     }));
     // ── Commands ──────────────────────────────────────────────────
     ctx.subscriptions.push(vscode.commands.registerCommand("aiCopilot.suggest", async () => {
@@ -102,7 +107,16 @@ function activate(ctx) {
             }
         });
     }));
+    ctx.subscriptions.push(vscode.commands.registerCommand("aiCopilot.openSettings", () => {
+        settingsPanel_1.SettingsPanel.open(ctx.extensionUri, ctx);
+    }));
+    ctx.subscriptions.push(vscode.commands.registerCommand("aiCopilot.restartBackend", () => {
+        (0, backendManager_1.restartBackend)(ctx.extensionUri, ctx);
+        vscode.window.showInformationMessage("🔄 Backend restarting...");
+    }));
     console.log("✅ AI Copilot extension active");
 }
-function deactivate() { }
+function deactivate() {
+    (0, backendManager_1.stopBackend)();
+}
 //# sourceMappingURL=extension.js.map

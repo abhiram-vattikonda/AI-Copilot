@@ -1,41 +1,59 @@
 {
   "name": "ai-copilot",
   "displayName": "AI Copilot",
-  "description": "Local AI-powered code completion using Ollama or cloud LLMs",
+  "description": "Local AI coding assistant with chat, completions and bug detection",
   "version": "0.0.1",
-  "engines": {
-    "vscode": "^1.85.0"
+  "publisher": "abhiram-vattikonda",
+  "engines": { "vscode": "^1.110.0" },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/abhiram-vattikonda/AI-Copilot"
   },
-  "categories": ["Other"],
+  "categories": [
+    "Other"
+  ],
   "activationEvents": [
     "onStartupFinished"
   ],
   "main": "./out/extension.js",
   "contributes": {
-    "commands": [
-      {
-        "command": "aiCopilot.suggest",
-        "title": "AI: Analyze & suggest improvements"
-      },
-      {
-        "command": "aiCopilot.fix",
-        "title": "AI: Fix bugs in file"
-      }
-    ],
-    "configuration": {
-      "title": "AI Copilot",
-      "properties": {
-        "aiCopilot.backendUrl": {
-          "type": "string",
-          "default": "http://localhost:3000",
-          "description": "URL of the AI Copilot backend"
-        },
-        "aiCopilot.debounceMs": {
-          "type": "number",
-          "default": 800,
-          "description": "Debounce delay (ms) before triggering inline completions"
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "ai-copilot",
+          "title": "AI Copilot",
+          "icon": "$(robot)"
         }
-      }
-    }
+      ]
+    },
+    "views": {
+      "ai-copilot": [
+        {
+          "type": "webview",
+          "id": "aiCopilot.chatView",
+          "name": "Chat"
+        }
+      ]
+    },
+    "commands": [
+      { "command": "aiCopilot.suggest",         "title": "AI: Analyze & suggest improvements" },
+      { "command": "aiCopilot.fix",             "title": "AI: Fix bugs in file" },
+      { "command": "aiCopilot.triggerComplete", "title": "AI: Complete code at cursor" },
+      { "command": "aiCopilot.openSettings",    "title": "AI Copilot: Open Settings" },
+      { "command": "aiCopilot.restartBackend",  "title": "AI Copilot: Restart Backend" }
+    ]
+  },
+  "dependencies": {
+    "ws": "^8.20.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.110.0",
+    "@types/ws": "^8.18.1",
+    "typescript": "^6.0.2"
+  },
+  "scripts": {
+    "compile": "tsc",
+    "watch": "tsc -watch"
   }
 }
