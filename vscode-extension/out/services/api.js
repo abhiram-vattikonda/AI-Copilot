@@ -33,6 +33,8 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.getActiveModel = getActiveModel;
+exports.fetchModels = fetchModels;
 exports.getCursorContext = getCursorContext;
 exports.fetchCompletion = fetchCompletion;
 exports.fetchExplain = fetchExplain;
@@ -45,11 +47,26 @@ function backendUrl() {
         .getConfiguration("aiCopilot")
         .get("backendUrl", "http://localhost:3000");
 }
-/**
- * Extracts context around the cursor:
- * - prefix: last N lines before cursor (what the model sees as context)
- * - suffix: next few lines after cursor (so model knows what comes next)
- */
+function getActiveModel() {
+    const cfg = vscode.workspace.getConfiguration("aiCopilot");
+    return {
+        providerKey: cfg.get("activeProviderKey", ""),
+        model: cfg.get("activeModel", ""),
+        label: cfg.get("activeLabel", ""),
+    };
+}
+async function fetchModels() {
+    try {
+        const res = await fetch(`${backendUrl()}/models`);
+        if (!res.ok)
+            return [];
+        const data = await res.json();
+        return data.providers;
+    }
+    catch {
+        return [];
+    }
+}
 function getCursorContext(document, position, prefixLines = 20, suffixLines = 5) {
     const startLine = Math.max(0, position.line - prefixLines);
     const endLine = Math.min(document.lineCount - 1, position.line + suffixLines);
@@ -57,24 +74,25 @@ function getCursorContext(document, position, prefixLines = 20, suffixLines = 5)
     const suffix = document.getText(new vscode.Range(position, new vscode.Position(endLine, 999)));
     return { prefix, suffix };
 }
+function activeModelBody() {
+    const { providerKey, model } = getActiveModel();
+    const body = {};
+    if (providerKey)
+        body.providerKey = providerKey;
+    if (model)
+        body.model = model;
+    return body;
+}
 async function fetchCompletion(document, position, language) {
     const { prefix, suffix } = getCursorContext(document, position);
-    console.log("🟡 fetching completion for cursor context...");
     const res = await fetch(`${backendUrl()}/complete`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            prefix,
-            suffix,
-            language,
-            task: "complete",
-        }),
+        body: JSON.stringify({ prefix, suffix, language, task: "complete", ...activeModelBody() }),
     });
     if (!res.ok)
         throw new Error(`Backend error: ${res.status}`);
-    const result = (await res.json()).result;
-    console.log("🟢 got result:", result.slice(0, 80));
-    return result;
+    return (await res.json()).result;
 }
 function stripOuterMarkdownFence(text) {
     const t = text.trim();
@@ -93,43 +111,37 @@ async function fetchExplain(code, language) {
     const res = await fetch(`${backendUrl()}/complete`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code, language, task: "explain" }),
+        body: JSON.stringify({ code, language, task: "explain", ...activeModelBody() }),
     });
     if (!res.ok)
         throw new Error(`Backend error: ${res.status}`);
-    const result = (await res.json()).result;
-    return result;
+    return (await res.json()).result;
 }
 async function fetchFix(code, language) {
     const res = await fetch(`${backendUrl()}/complete`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code, language, task: "fix" }),
+        body: JSON.stringify({ code, language, task: "fix", ...activeModelBody() }),
     });
     if (!res.ok)
         throw new Error(`Backend error: ${res.status}`);
-    let result = (await res.json()).result;
-    result = stripOuterMarkdownFence(result);
-    return result;
+    return stripOuterMarkdownFence((await res.json()).result);
 }
 async function fetchSuggestions(code, language) {
     const res = await fetch(`${backendUrl()}/suggest`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code, language }),
+        body: JSON.stringify({ code, language, ...activeModelBody() }),
     });
     if (!res.ok)
         throw new Error(`Backend error: ${res.status}`);
     return res.json();
 }
-/**
- * Streams assistant tokens from POST /chat/stream (SSE).
- */
 async function streamChat(messages, onToken) {
     const res = await fetch(`${backendUrl()}/chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages }),
+        body: JSON.stringify({ messages, ...activeModelBody() }),
     });
     if (!res.ok) {
         const text = await res.text();

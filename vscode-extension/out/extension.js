@@ -41,51 +41,102 @@ const diagnostics_1 = require("./providers/diagnostics");
 const chatPanel_1 = require("./panels/chatPanel");
 const api_1 = require("./services/api");
 function activate(ctx) {
-    // ── Inline completion provider (keeps ghost text working if VS Code allows it)
+    // ── Inline completion ─────────────────────────────────────────
     ctx.subscriptions.push(vscode.languages.registerInlineCompletionItemProvider({ pattern: "**" }, new completion_1.AICompletionProvider()));
     // ── Auto-complete on typing pause ─────────────────────────────
     let typingTimer = null;
-    let lastInsertedText = "";
     ctx.subscriptions.push(vscode.workspace.onDidChangeTextDocument(async (event) => {
         const editor = vscode.window.activeTextEditor;
         if (!editor || event.document !== editor.document)
             return;
-        // Clear previous timer on every keystroke
         if (typingTimer)
             clearTimeout(typingTimer);
         typingTimer = setTimeout(async () => {
             const code = event.document.getText();
             if (code.trim().length < 2)
                 return;
-            if (code === lastInsertedText)
-                return;
             try {
-                console.log("🟡 auto-triggering completion...");
                 await vscode.commands.executeCommand("editor.action.inlineSuggest.trigger");
-                console.log("🟢 suggestion triggered");
             }
             catch (err) {
                 console.error("🔴 auto-complete error:", err);
             }
-        }, 1500); // 1.5 seconds after you stop typing
+        }, 1500);
     }));
-    // ── Commands ──────────────────────────────────────────────────
+    // ── Status bar ────────────────────────────────────────────────
+    const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+    statusBar.command = "aiCopilot.switchModel";
+    statusBar.tooltip = "AI Copilot — click to switch model";
+    function updateStatusBar() {
+        const { label, model } = (0, api_1.getActiveModel)();
+        statusBar.text = label && model
+            ? `$(circuit-board) ${label} · ${model}`
+            : `$(circuit-board) AI: select model`;
+        statusBar.show();
+    }
+    updateStatusBar();
+    ctx.subscriptions.push(statusBar);
+    // Keep status bar in sync when settings change (e.g. another window updated them)
+    ctx.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
+        if (e.affectsConfiguration("aiCopilot"))
+            updateStatusBar();
+    }));
+    // ── switchModel command ───────────────────────────────────────
+    ctx.subscriptions.push(vscode.commands.registerCommand("aiCopilot.switchModel", async () => {
+        const allProviders = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: "AI Copilot: Fetching available models…" }, () => (0, api_1.fetchModels)());
+        if (!allProviders.length) {
+            vscode.window.showErrorMessage("AI Copilot: Backend unreachable or no providers configured in .env");
+            return;
+        }
+        const items = [];
+        for (const p of allProviders) {
+            items.push({
+                label: `${p.label}  (${p.type})`,
+                kind: vscode.QuickPickItemKind.Separator,
+            });
+            for (const m of p.models) {
+                const { providerKey: curKey, model: curModel } = (0, api_1.getActiveModel)();
+                const isActive = curKey === p.providerKey && curModel === m;
+                items.push({
+                    label: m,
+                    description: p.label,
+                    detail: isActive ? "✓ currently active" : undefined,
+                    providerKey: p.providerKey,
+                    modelId: m,
+                    providerLabel: p.label,
+                });
+            }
+        }
+        const picked = await vscode.window.showQuickPick(items, {
+            placeHolder: "Select a model — all AI features will use it",
+            matchOnDescription: true,
+            matchOnDetail: false,
+        });
+        if (!picked || !picked.providerKey)
+            return;
+        const cfg = vscode.workspace.getConfiguration("aiCopilot");
+        await cfg.update("activeProviderKey", picked.providerKey, vscode.ConfigurationTarget.Global);
+        await cfg.update("activeModel", picked.modelId, vscode.ConfigurationTarget.Global);
+        await cfg.update("activeLabel", picked.providerLabel, vscode.ConfigurationTarget.Global);
+        updateStatusBar();
+        chatPanel_1.ChatPanel.notifyModelChanged(picked.providerLabel, picked.modelId);
+        vscode.window.showInformationMessage(`AI Copilot: switched to ${picked.providerLabel} · ${picked.modelId}`);
+    }));
+    // ── Other commands ────────────────────────────────────────────
     ctx.subscriptions.push(vscode.commands.registerCommand("aiCopilot.suggest", async () => {
         const editor = vscode.window.activeTextEditor;
         if (editor)
             await (0, diagnostics_1.runDiagnostics)(editor);
     }));
-    ctx.subscriptions.push(vscode.commands.registerCommand("aiCopilot.chat", () => {
-        chatPanel_1.ChatPanel.show(ctx);
-    }));
+    ctx.subscriptions.push(vscode.commands.registerCommand("aiCopilot.chat", () => chatPanel_1.ChatPanel.show(ctx)));
     ctx.subscriptions.push(vscode.commands.registerCommand("aiCopilot.fix", async () => {
         const editor = vscode.window.activeTextEditor;
         if (!editor)
             return;
-        vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: "AI: Fixing bugs..." }, async () => {
+        vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: "AI: Fixing bugs…" }, async () => {
             try {
                 const result = await (0, api_1.fetchFix)(editor.document.getText(), editor.document.languageId);
-                await editor.edit((eb) => eb.replace(new vscode.Range(new vscode.Position(0, 0), editor.document.lineAt(editor.document.lineCount - 1).range.end), result));
+                await editor.edit(eb => eb.replace(new vscode.Range(new vscode.Position(0, 0), editor.document.lineAt(editor.document.lineCount - 1).range.end), result));
             }
             catch (err) {
                 vscode.window.showErrorMessage(`AI Copilot: ${err.message}`);
@@ -96,16 +147,13 @@ function activate(ctx) {
         const editor = vscode.window.activeTextEditor;
         if (!editor)
             return;
-        const selection = editor.selection;
-        const selectedText = editor.document.getText(selection);
+        const selectedText = editor.document.getText(editor.selection);
         if (!selectedText.trim()) {
             vscode.window.showWarningMessage("AI Copilot: Please select some code to explain.");
             return;
         }
-        // Open chat panel first
         chatPanel_1.ChatPanel.show(ctx);
-        // Send the explain request to the chat panel
-        vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: "AI: Explaining code..." }, async () => {
+        vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: "AI: Explaining code…" }, async () => {
             try {
                 const explanation = await (0, api_1.fetchExplain)(selectedText, editor.document.languageId);
                 chatPanel_1.ChatPanel.sendExplanation(ctx, selectedText, editor.document.languageId, explanation);

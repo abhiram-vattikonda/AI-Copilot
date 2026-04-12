@@ -8,7 +8,6 @@ const router = Router();
 function buildPrompt(task, language, { code, prefix, suffix }) {
   switch (task) {
     case "complete":
-      // FIM (fill-in-middle) style prompt — only complete what comes after cursor
       return `You are a code completion assistant. Complete the ${language} code at the cursor position.
 IMPORTANT: Return ONLY the completion text that should be inserted at the cursor. Do not repeat the code before the cursor. Do not add explanations.
 
@@ -27,7 +26,7 @@ STRICT OUTPUT RULES:
 - Return ONLY the raw source code of the fixed program.
 - Do NOT wrap the code in markdown fences (no triple backticks or language tags).
 - Do NOT add any explanation, headings, or text before or after the code.
-- Indecate the change line with a comment after the line about what you changed.
+- Indicate each change with a short inline comment on the same line (e.g. // fix: ...).
 
 --- code to fix ---
 ${code}
@@ -43,16 +42,14 @@ ${code}
 
 router.post("/", async (req, res) => {
   const {
-    code,
-    prefix,
-    suffix,
+    code, prefix, suffix,
     language = "javascript",
     task = "complete",
+    providerKey,
+    model,
   } = req.body;
 
-  // Support both old (code) and new (prefix/suffix) formats
   const context = { code, prefix: prefix ?? code, suffix: suffix ?? "" };
-
   if (!code && !prefix) {
     return res.status(400).json({ error: "Missing required field: code or prefix" });
   }
@@ -61,12 +58,10 @@ router.post("/", async (req, res) => {
   const start  = Date.now();
 
   try {
-    let result = await complete(prompt);
-    if (task === "fix") {
-      result = stripOuterMarkdownFence(result);
-    }
+    let result = await complete(prompt, { providerKey, model });
+    if (task === "fix") result = stripOuterMarkdownFence(result);
     const ms = Date.now() - start;
-    logger.request("/complete", process.env.PROVIDER, ms);
+    logger.request("/complete", providerKey || "default", ms);
     res.json({ result, latency: ms, task, language });
   } catch (err) {
     logger.error(err.message);

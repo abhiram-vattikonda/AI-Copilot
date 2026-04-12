@@ -1,6 +1,5 @@
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
+
 body {
   margin: 0;
   padding: 8px;
@@ -12,11 +11,17 @@ body {
   flex-direction: column;
   height: 100vh;
 }
+
+/* ── Toolbar ─────────────────────────────────────────────────── */
 .toolbar {
-  margin-bottom: 8px;
   display: flex;
+  align-items: center;
   gap: 6px;
+  margin-bottom: 8px;
+  flex-shrink: 0;
 }
+.toolbar-spacer { flex: 1; }
+
 .toolbar button {
   background: var(--vscode-button-secondaryBackground);
   color: var(--vscode-button-secondaryForeground);
@@ -24,12 +29,48 @@ body {
   padding: 4px 10px;
   cursor: pointer;
   border-radius: 3px;
+  font-size: var(--vscode-font-size);
+  white-space: nowrap;
 }
+.toolbar button:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+/* Model pill — stands out as primary action */
+#model-pill {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border: none;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-weight: 500;
+  max-width: 260px;
+  overflow: hidden;
+}
+#model-pill:hover {
+  background: var(--vscode-button-hoverBackground);
+}
+#model-pill-icon {
+  font-size: 0.9em;
+  opacity: 0.85;
+  flex-shrink: 0;
+}
+#model-pill-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 #explain {
   background: var(--vscode-button-background);
   color: var(--vscode-button-foreground);
   border: none;
 }
+
+/* ── Chat log ────────────────────────────────────────────────── */
 .log {
   flex: 1;
   overflow-y: auto;
@@ -38,6 +79,7 @@ body {
   padding: 8px;
   margin-bottom: 8px;
 }
+
 .bubble {
   margin: 8px 0;
   padding: 8px 10px;
@@ -55,14 +97,17 @@ body {
   color: var(--vscode-errorForeground);
   border: 1px solid var(--vscode-inputValidation-errorBorder);
 }
+
 .role {
   font-size: 0.85em;
-  opacity: 0.8;
+  opacity: 0.7;
   margin-bottom: 6px;
+  font-weight: 600;
 }
-.message-body .md-text {
-  white-space: pre-wrap;
-}
+
+.message-body .md-text { white-space: pre-wrap; }
+
+/* ── Code blocks ─────────────────────────────────────────────── */
 .code-block {
   margin: 10px 0;
   border: 1px solid var(--vscode-widget-border);
@@ -95,9 +140,7 @@ body {
   border: 1px solid var(--vscode-widget-border);
   border-radius: 4px;
 }
-.copy-code:hover {
-  background: var(--vscode-toolbar-hoverBackground);
-}
+.copy-code:hover { background: var(--vscode-toolbar-hoverBackground); }
 .code-block pre {
   margin: 0;
   padding: 10px 12px;
@@ -107,14 +150,14 @@ body {
   font-size: calc(var(--vscode-font-size) * 0.92);
   line-height: 1.45;
 }
-.code-block code {
-  font-family: inherit;
-  color: var(--vscode-editor-foreground);
-}
+.code-block code { font-family: inherit; color: var(--vscode-editor-foreground); }
+
+/* ── Input row ───────────────────────────────────────────────── */
 .input-row {
   display: flex;
   gap: 8px;
   align-items: flex-end;
+  flex-shrink: 0;
 }
 #input {
   flex: 1;
@@ -135,8 +178,6 @@ body {
   border: none;
   border-radius: 4px;
   cursor: pointer;
+  font-size: inherit;
 }
-#send:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+#send:disabled { opacity: 0.5; cursor: not-allowed; }

@@ -6,7 +6,8 @@ import { logger } from "../services/logger.js";
 const router = Router();
 
 router.post("/stream", async (req, res) => {
-  const { messages } = req.body;
+  const { messages, providerKey, model } = req.body;
+
   let prompt;
   try {
     prompt = messagesToPrompt(messages);
@@ -21,11 +22,11 @@ router.post("/stream", async (req, res) => {
   const start = Date.now();
 
   try {
-    for await (const token of stream(prompt)) {
+    for await (const token of stream(prompt, { providerKey, model })) {
       res.write(`data: ${JSON.stringify({ token })}\n\n`);
     }
     res.write("data: [DONE]\n\n");
-    logger.request("/chat/stream", process.env.PROVIDER, Date.now() - start);
+    logger.request("/chat/stream", providerKey || "default", Date.now() - start);
   } catch (err) {
     logger.error(err.message);
     res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);

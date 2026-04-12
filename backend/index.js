@@ -5,6 +5,7 @@ import completeRouter from "./src/routes/complete.js";
 import suggestRouter from "./src/routes/suggest.js";
 import healthRouter from "./src/routes/health.js";
 import chatRouter from "./src/routes/chat.js";
+import modelsRouter from "./src/routes/models.js";
 import { logger } from "./src/services/logger.js";
 
 const app = express();
@@ -23,6 +24,7 @@ app.use("/complete", completeRouter);
 app.use("/suggest", suggestRouter);
 app.use("/health", healthRouter);
 app.use("/chat", chatRouter);
+app.use("/models", modelsRouter);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

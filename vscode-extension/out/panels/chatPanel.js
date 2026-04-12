@@ -37,23 +37,25 @@ exports.ChatPanel = void 0;
 const vscode = __importStar(require("vscode"));
 const api_1 = require("../services/api");
 class ChatPanel {
-    static sendExplanation(context, code, language, explanation) {
-        // Ensure the panel is open
-        ChatPanel.show(context);
-        if (!ChatPanel.instance)
-            return;
-        const panel = ChatPanel.instance;
-        const userContent = `Explain this ${language} code:\n\`\`\`${language}\n${code}\n\`\`\``;
-        panel.messages.push({ role: "user", content: userContent });
-        panel.messages.push({ role: "assistant", content: explanation });
-        panel.postState();
-    }
     static show(context) {
         if (ChatPanel.instance) {
             ChatPanel.instance.panel.reveal(vscode.ViewColumn.Beside, true);
             return;
         }
         ChatPanel.instance = new ChatPanel(context);
+    }
+    static sendExplanation(context, code, language, explanation) {
+        ChatPanel.show(context);
+        if (!ChatPanel.instance)
+            return;
+        const panel = ChatPanel.instance;
+        panel.messages.push({ role: "user", content: `Explain this ${language} code:\n\`\`\`${language}\n${code}\n\`\`\`` });
+        panel.messages.push({ role: "assistant", content: explanation });
+        panel.postState();
+    }
+    /** Called from extension.ts after user switches model — updates the header pill */
+    static notifyModelChanged(label, model) {
+        ChatPanel.instance?.panel.webview.postMessage({ type: "modelChanged", label, model });
     }
     constructor(context) {
         this.messages = [];
@@ -63,9 +65,7 @@ class ChatPanel {
             localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, "media")],
         });
         this.panel.webview.html = this.getHtml(this.panel.webview, context.extensionUri);
-        this.panel.onDidDispose(() => {
-            ChatPanel.instance = undefined;
-        });
+        this.panel.onDidDispose(() => { ChatPanel.instance = undefined; });
         this.panel.webview.onDidReceiveMessage(async (msg) => {
             if (msg.type === "send" && msg.text?.trim()) {
                 const userText = msg.text.trim();
@@ -87,8 +87,10 @@ class ChatPanel {
                 }
                 this.postState();
             }
+            else if (msg.type === "switchModel") {
+                vscode.commands.executeCommand("aiCopilot.switchModel");
+            }
             else if (msg.type === "explainSelection") {
-                // Trigger the explain command, which uses the active editor's selection
                 vscode.commands.executeCommand("aiCopilot.explain");
             }
             else if (msg.type === "clear") {
@@ -97,6 +99,11 @@ class ChatPanel {
             }
             else if (msg.type === "ready") {
                 this.postState();
+                // Send current model info to webview
+                const { label, model } = (0, api_1.getActiveModel)();
+                if (label && model) {
+                    this.panel.webview.postMessage({ type: "modelChanged", label, model });
+                }
             }
         }, undefined, context.subscriptions);
     }
@@ -115,8 +122,13 @@ class ChatPanel {
 </head>
 <body>
   <div class="toolbar">
+    <button type="button" id="model-pill" title="Click to switch model">
+      <span id="model-pill-icon">⬡</span>
+      <span id="model-pill-text">select model</span>
+    </button>
+    <div class="toolbar-spacer"></div>
     <button type="button" id="explain">Explain selection</button>
-    <button type="button" id="clear">Clear chat</button>
+    <button type="button" id="clear">Clear</button>
   </div>
   <div id="log" class="log"></div>
   <div class="input-row">

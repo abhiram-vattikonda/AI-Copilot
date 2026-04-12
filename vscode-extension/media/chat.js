@@ -1,17 +1,24 @@
 // @ts-check
 (function () {
-  const vscode = acquireVsCodeApi();
-  const log = document.getElementById("log");
-  const input = document.getElementById("input");
-  const sendBtn = document.getElementById("send");
-  const clearBtn = document.getElementById("clear");
+  const vscode    = acquireVsCodeApi();
+  const log       = document.getElementById("log");
+  const input     = document.getElementById("input");
+  const sendBtn   = document.getElementById("send");
+  const clearBtn  = document.getElementById("clear");
+  const explainBtn= document.getElementById("explain");
+  const modelPill = document.getElementById("model-pill");
+  const pillText  = document.getElementById("model-pill-text");
 
-  /** @type {HTMLElement | null} */
-  let streamingEl = null;
+  let streamingEl  = null;
   let streamingRaw = "";
-  /** @type {number | null} */
-  let streamRaf = null;
+  let streamRaf    = null;
 
+  // ── Model pill ────────────────────────────────────────────────
+  modelPill?.addEventListener("click", () => {
+    vscode.postMessage({ type: "switchModel" });
+  });
+
+  // ── Markdown rendering ────────────────────────────────────────
   function appendMdText(container, text) {
     if (!text) return;
     const div = document.createElement("div");
@@ -21,11 +28,11 @@
   }
 
   function appendCodeBlock(container, lang, code) {
-    const wrap = document.createElement("div");
+    const wrap    = document.createElement("div");
     wrap.className = "code-block";
-    const head = document.createElement("div");
+    const head    = document.createElement("div");
     head.className = "code-block-head";
-    const label = document.createElement("span");
+    const label   = document.createElement("span");
     label.className = "code-lang";
     label.textContent = lang || "code";
     const copyBtn = document.createElement("button");
@@ -34,63 +41,38 @@
     copyBtn.textContent = "Copy";
     copyBtn.addEventListener("click", () => {
       navigator.clipboard.writeText(code).then(
-        () => {
-          copyBtn.textContent = "Copied!";
-          setTimeout(() => {
-            copyBtn.textContent = "Copy";
-          }, 1500);
-        },
-        () => {
-          copyBtn.textContent = "Failed";
-        }
+        () => { copyBtn.textContent = "Copied!"; setTimeout(() => { copyBtn.textContent = "Copy"; }, 1500); },
+        () => { copyBtn.textContent = "Failed"; }
       );
     });
     head.appendChild(label);
     head.appendChild(copyBtn);
     wrap.appendChild(head);
-    const pre = document.createElement("pre");
-    const codeEl = document.createElement("code");
-    codeEl.textContent = code;
-    pre.appendChild(codeEl);
+    const pre  = document.createElement("pre");
+    const code_= document.createElement("code");
+    code_.textContent = code;
+    pre.appendChild(code_);
     wrap.appendChild(pre);
     container.appendChild(wrap);
   }
 
-  /**
-   * Parse ``` fences into text + editor-style code blocks (ChatGPT-like).
-   * @param {HTMLElement} container
-   * @param {string} text
-   */
   function renderMessageBody(container, text) {
     container.innerHTML = "";
     if (!text) return;
-
     let i = 0;
     while (i < text.length) {
       const fence = text.indexOf("```", i);
-      if (fence === -1) {
-        appendMdText(container, text.slice(i));
-        break;
-      }
-      if (fence > i) {
-        appendMdText(container, text.slice(i, fence));
-      }
+      if (fence === -1) { appendMdText(container, text.slice(i)); break; }
+      if (fence > i) appendMdText(container, text.slice(i, fence));
       const afterOpen = fence + 3;
-      const lineEnd = text.indexOf("\n", afterOpen);
-      let lang = "";
-      let bodyStart = afterOpen;
+      const lineEnd   = text.indexOf("\n", afterOpen);
+      let lang = "", bodyStart = afterOpen;
       if (lineEnd !== -1) {
         const firstLine = text.slice(afterOpen, lineEnd).trim();
-        if (/^[\w.+-]+$/.test(firstLine) && firstLine.length < 48) {
-          lang = firstLine;
-          bodyStart = lineEnd + 1;
-        }
+        if (/^[\w.+-]+$/.test(firstLine) && firstLine.length < 48) { lang = firstLine; bodyStart = lineEnd + 1; }
       }
       const close = text.indexOf("```", bodyStart);
-      if (close === -1) {
-        appendMdText(container, text.slice(fence));
-        break;
-      }
+      if (close === -1) { appendMdText(container, text.slice(fence)); break; }
       appendCodeBlock(container, lang, text.slice(bodyStart, close));
       i = close + 3;
     }
@@ -100,52 +82,43 @@
     if (streamRaf !== null) return;
     streamRaf = requestAnimationFrame(() => {
       streamRaf = null;
-      if (streamingEl) {
-        renderMessageBody(streamingEl, streamingRaw);
-      }
+      if (streamingEl) renderMessageBody(streamingEl, streamingRaw);
       if (log) log.scrollTop = log.scrollHeight;
     });
   }
 
-  function renderHistory(messages) {
-    if (!log) return;
-    log.innerHTML = "";
-    streamingEl = null;
-    streamingRaw = "";
-    for (const m of messages) {
-      appendBubble(m.role, m.content);
-    }
-    log.scrollTop = log.scrollHeight;
-  }
-
   function appendBubble(role, text) {
-    if (!log) return;
-    const wrap = document.createElement("div");
+    if (!log) return null;
+    const wrap  = document.createElement("div");
     wrap.className = "bubble " + role;
-    const label = document.createElement("div");
-    label.className = "role";
-    label.textContent = role === "user" ? "You" : role === "assistant" ? "Assistant" : role;
-    const body = document.createElement("div");
+    const lbl   = document.createElement("div");
+    lbl.className = "role";
+    lbl.textContent = role === "user" ? "You" : role === "assistant" ? "Assistant" : role;
+    const body  = document.createElement("div");
     body.className = "message-body";
     renderMessageBody(body, text || "");
-    wrap.appendChild(label);
+    wrap.appendChild(lbl);
     wrap.appendChild(body);
     log.appendChild(wrap);
     log.scrollTop = log.scrollHeight;
     return body;
   }
 
-  function setBusy(busy) {
-    if (sendBtn) sendBtn.disabled = busy;
-    if (input) input.disabled = busy;
+  function renderHistory(messages) {
+    if (!log) return;
+    log.innerHTML = "";
+    streamingEl  = null;
+    streamingRaw = "";
+    for (const m of messages) appendBubble(m.role, m.content);
+    log.scrollTop = log.scrollHeight;
   }
 
-  const explainBtn = document.getElementById("explain");
+  function setBusy(busy) {
+    if (sendBtn) sendBtn.disabled = busy;
+    if (input)   input.disabled   = busy;
+  }
 
-  explainBtn?.addEventListener("click", () => {
-    vscode.postMessage({ type: "explainSelection" });
-  });
-
+  // ── Button listeners ──────────────────────────────────────────
   sendBtn?.addEventListener("click", () => {
     const text = input?.value ?? "";
     if (!text.trim() || sendBtn?.disabled) return;
@@ -153,38 +126,46 @@
     if (input) input.value = "";
   });
 
-  clearBtn?.addEventListener("click", () => {
-    vscode.postMessage({ type: "clear" });
-  });
+  clearBtn?.addEventListener("click", () => vscode.postMessage({ type: "clear" }));
+  explainBtn?.addEventListener("click", () => vscode.postMessage({ type: "explainSelection" }));
 
   input?.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendBtn?.click();
-    }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendBtn?.click(); }
   });
 
+  // ── Message handler ───────────────────────────────────────────
   window.addEventListener("message", (event) => {
     const msg = event.data;
     switch (msg.type) {
       case "history":
         renderHistory(msg.messages || []);
         break;
+
+      case "modelChanged":
+        if (pillText) {
+          pillText.textContent = msg.label && msg.model
+            ? `${msg.label} · ${msg.model}`
+            : "select model";
+        }
+        break;
+
       case "assistantStart":
         setBusy(true);
         streamingRaw = "";
-        if (!log) break;
-        streamingEl = appendBubble("assistant", "");
+        streamingEl  = appendBubble("assistant", "");
         break;
+
       case "assistantDelta":
         streamingRaw += msg.token || "";
         scheduleStreamRender();
         break;
+
       case "assistantDone":
         setBusy(false);
-        streamingEl = null;
+        streamingEl  = null;
         streamingRaw = "";
         break;
+
       case "assistantError":
         setBusy(false);
         streamingRaw = "";
@@ -197,11 +178,9 @@
           streamingEl.appendChild(err);
         } else if (log) {
           const el = appendBubble("assistant", msg.message || "Error");
-          el.parentElement?.classList.add("error");
+          el?.parentElement?.classList.add("error");
         }
         streamingEl = null;
-        break;
-      default:
         break;
     }
   });

@@ -6,13 +6,35 @@ function backendUrl() {
     .get<string>("backendUrl", "http://localhost:3000");
 }
 
+export function getActiveModel(): { providerKey: string; model: string; label: string } {
+  const cfg = vscode.workspace.getConfiguration("aiCopilot");
+  return {
+    providerKey: cfg.get<string>("activeProviderKey", ""),
+    model:       cfg.get<string>("activeModel", ""),
+    label:       cfg.get<string>("activeLabel", ""),
+  };
+}
+
 export type ChatMessage = { role: "user" | "assistant" | "system"; content: string };
 
-/**
- * Extracts context around the cursor:
- * - prefix: last N lines before cursor (what the model sees as context)
- * - suffix: next few lines after cursor (so model knows what comes next)
- */
+export type ProviderInfo = {
+  providerKey: string;
+  label: string;
+  type: string;
+  models: string[];
+};
+
+export async function fetchModels(): Promise<ProviderInfo[]> {
+  try {
+    const res = await fetch(`${backendUrl()}/models`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.providers as ProviderInfo[];
+  } catch {
+    return [];
+  }
+}
+
 export function getCursorContext(
   document: vscode.TextDocument,
   position: vscode.Position,
@@ -20,16 +42,18 @@ export function getCursorContext(
   suffixLines = 5
 ) {
   const startLine = Math.max(0, position.line - prefixLines);
-  const endLine = Math.min(document.lineCount - 1, position.line + suffixLines);
-
-  const prefix = document.getText(
-    new vscode.Range(new vscode.Position(startLine, 0), position)
-  );
-  const suffix = document.getText(
-    new vscode.Range(position, new vscode.Position(endLine, 999))
-  );
-
+  const endLine   = Math.min(document.lineCount - 1, position.line + suffixLines);
+  const prefix = document.getText(new vscode.Range(new vscode.Position(startLine, 0), position));
+  const suffix = document.getText(new vscode.Range(position, new vscode.Position(endLine, 999)));
   return { prefix, suffix };
+}
+
+function activeModelBody() {
+  const { providerKey, model } = getActiveModel();
+  const body: Record<string, string> = {};
+  if (providerKey) body.providerKey = providerKey;
+  if (model)       body.model       = model;
+  return body;
 }
 
 export async function fetchCompletion(
@@ -38,24 +62,13 @@ export async function fetchCompletion(
   language: string
 ) {
   const { prefix, suffix } = getCursorContext(document, position);
-
-  console.log("🟡 fetching completion for cursor context...");
-
   const res = await fetch(`${backendUrl()}/complete`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      prefix,
-      suffix,
-      language,
-      task: "complete",
-    }),
+    body: JSON.stringify({ prefix, suffix, language, task: "complete", ...activeModelBody() }),
   });
-
   if (!res.ok) throw new Error(`Backend error: ${res.status}`);
-  const result = (await res.json()).result as string;
-  console.log("🟢 got result:", result.slice(0, 80));
-  return result;
+  return (await res.json()).result as string;
 }
 
 function stripOuterMarkdownFence(text: string): string {
@@ -73,42 +86,32 @@ export async function fetchExplain(code: string, language: string) {
   const res = await fetch(`${backendUrl()}/complete`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code, language, task: "explain" }),
+    body: JSON.stringify({ code, language, task: "explain", ...activeModelBody() }),
   });
   if (!res.ok) throw new Error(`Backend error: ${res.status}`);
-  const result = (await res.json()).result as string;
-  return result;
+  return (await res.json()).result as string;
 }
 
 export async function fetchFix(code: string, language: string) {
   const res = await fetch(`${backendUrl()}/complete`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code, language, task: "fix" }),
+    body: JSON.stringify({ code, language, task: "fix", ...activeModelBody() }),
   });
   if (!res.ok) throw new Error(`Backend error: ${res.status}`);
-  let result = (await res.json()).result as string;
-  result = stripOuterMarkdownFence(result);
-  return result;
+  return stripOuterMarkdownFence((await res.json()).result as string);
 }
 
 export async function fetchSuggestions(code: string, language: string) {
   const res = await fetch(`${backendUrl()}/suggest`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code, language }),
+    body: JSON.stringify({ code, language, ...activeModelBody() }),
   });
   if (!res.ok) throw new Error(`Backend error: ${res.status}`);
-  return res.json() as Promise<{
-    bugs: string[];
-    optimizations: string[];
-    severity: string;
-  }>;
+  return res.json() as Promise<{ bugs: string[]; optimizations: string[]; severity: string }>;
 }
 
-/**
- * Streams assistant tokens from POST /chat/stream (SSE).
- */
 export async function streamChat(
   messages: ChatMessage[],
   onToken: (token: string) => void
@@ -116,21 +119,17 @@ export async function streamChat(
   const res = await fetch(`${backendUrl()}/chat/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages }),
+    body: JSON.stringify({ messages, ...activeModelBody() }),
   });
-
   if (!res.ok) {
     const text = await res.text();
     throw new Error(text || `Backend error: ${res.status}`);
   }
-
   const body = res.body;
   if (!body) throw new Error("Empty response body");
-
-  const reader = body.getReader();
+  const reader  = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;

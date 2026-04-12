@@ -1,25 +1,8 @@
 import * as vscode from "vscode";
-import { streamChat, type ChatMessage } from "../services/api";
+import { streamChat, type ChatMessage, getActiveModel } from "../services/api";
 
 export class ChatPanel {
   private static instance: ChatPanel | undefined;
-
-  static sendExplanation(
-    context: vscode.ExtensionContext,
-    code: string,
-    language: string,
-    explanation: string
-  ) {
-    // Ensure the panel is open
-    ChatPanel.show(context);
-    if (!ChatPanel.instance) return;
-
-    const panel = ChatPanel.instance;
-    const userContent = `Explain this ${language} code:\n\`\`\`${language}\n${code}\n\`\`\``;
-    panel.messages.push({ role: "user", content: userContent });
-    panel.messages.push({ role: "assistant", content: explanation });
-    panel.postState();
-  }
 
   static show(context: vscode.ExtensionContext) {
     if (ChatPanel.instance) {
@@ -27,6 +10,25 @@ export class ChatPanel {
       return;
     }
     ChatPanel.instance = new ChatPanel(context);
+  }
+
+  static sendExplanation(
+    context: vscode.ExtensionContext,
+    code: string,
+    language: string,
+    explanation: string
+  ) {
+    ChatPanel.show(context);
+    if (!ChatPanel.instance) return;
+    const panel = ChatPanel.instance;
+    panel.messages.push({ role: "user", content: `Explain this ${language} code:\n\`\`\`${language}\n${code}\n\`\`\`` });
+    panel.messages.push({ role: "assistant", content: explanation });
+    panel.postState();
+  }
+
+  /** Called from extension.ts after user switches model — updates the header pill */
+  static notifyModelChanged(label: string, model: string) {
+    ChatPanel.instance?.panel.webview.postMessage({ type: "modelChanged", label, model });
   }
 
   private readonly panel: vscode.WebviewPanel;
@@ -45,10 +47,7 @@ export class ChatPanel {
     );
 
     this.panel.webview.html = this.getHtml(this.panel.webview, context.extensionUri);
-
-    this.panel.onDidDispose(() => {
-      ChatPanel.instance = undefined;
-    });
+    this.panel.onDidDispose(() => { ChatPanel.instance = undefined; });
 
     this.panel.webview.onDidReceiveMessage(
       async (msg: { type: string; text?: string }) => {
@@ -57,7 +56,6 @@ export class ChatPanel {
           this.messages.push({ role: "user", content: userText });
           this.postState();
           this.panel.webview.postMessage({ type: "assistantStart" });
-
           try {
             let acc = "";
             await streamChat(this.messages, (token) => {
@@ -71,14 +69,24 @@ export class ChatPanel {
             this.panel.webview.postMessage({ type: "assistantError", message });
           }
           this.postState();
+
+        } else if (msg.type === "switchModel") {
+          vscode.commands.executeCommand("aiCopilot.switchModel");
+
         } else if (msg.type === "explainSelection") {
-          // Trigger the explain command, which uses the active editor's selection
           vscode.commands.executeCommand("aiCopilot.explain");
+
         } else if (msg.type === "clear") {
           this.messages = [];
           this.postState();
+
         } else if (msg.type === "ready") {
           this.postState();
+          // Send current model info to webview
+          const { label, model } = getActiveModel();
+          if (label && model) {
+            this.panel.webview.postMessage({ type: "modelChanged", label, model });
+          }
         }
       },
       undefined,
@@ -91,7 +99,7 @@ export class ChatPanel {
   }
 
   private getHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {
-    const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "chat.css"));
+    const styleUri  = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "chat.css"));
     const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "chat.js"));
     return `<!DOCTYPE html>
 <html lang="en">
@@ -102,8 +110,13 @@ export class ChatPanel {
 </head>
 <body>
   <div class="toolbar">
+    <button type="button" id="model-pill" title="Click to switch model">
+      <span id="model-pill-icon">⬡</span>
+      <span id="model-pill-text">select model</span>
+    </button>
+    <div class="toolbar-spacer"></div>
     <button type="button" id="explain">Explain selection</button>
-    <button type="button" id="clear">Clear chat</button>
+    <button type="button" id="clear">Clear</button>
   </div>
   <div id="log" class="log"></div>
   <div class="input-row">
