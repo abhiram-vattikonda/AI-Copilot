@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { complete } from "../services/llm.js";
-import { logger }   from "../services/logger.js";
+import { logger } from "../services/logger.js";
+import { stripOuterMarkdownFence } from "../services/stripCodeFence.js";
 
 const router = Router();
 
@@ -20,7 +21,16 @@ ${suffix || ""}
 Completion:`;
 
     case "fix":
-      return `Fix all bugs in this ${language} code. Return the corrected code only, no explanation:\n\n${code}`;
+      return `Fix all bugs in this ${language} code.
+
+STRICT OUTPUT RULES:
+- Return ONLY the raw source code of the fixed program.
+- Do NOT wrap the code in markdown fences (no triple backticks or language tags).
+- Do NOT add any explanation, headings, or text before or after the code.
+
+--- code to fix ---
+${code}
+--- end ---`;
 
     case "explain":
       return `Explain what this ${language} code does in 2-3 sentences:\n\n${code}`;
@@ -50,8 +60,11 @@ router.post("/", async (req, res) => {
   const start  = Date.now();
 
   try {
-    const result = await complete(prompt);
-    const ms     = Date.now() - start;
+    let result = await complete(prompt);
+    if (task === "fix") {
+      result = stripOuterMarkdownFence(result);
+    }
+    const ms = Date.now() - start;
     logger.request("/complete", process.env.PROVIDER, ms);
     res.json({ result, latency: ms, task, language });
   } catch (err) {

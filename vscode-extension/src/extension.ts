@@ -1,31 +1,16 @@
 import * as vscode from "vscode";
-import * as path from "path";
 import { AICompletionProvider } from "./providers/completion";
 import { runDiagnostics } from "./providers/diagnostics";
-import { fetchCompletion, fetchFix } from "./services/api";
-import { ChatViewProvider } from "./panels/chatPanel";
-import { SettingsPanel } from "./panels/settingsPanel";
-import { startBackend, restartBackend, stopBackend } from "./services/backendManager";
+import { ChatPanel } from "./panels/chatPanel";
+import { fetchFix, fetchSuggestions, fetchExplain } from "./services/api";
 
-export async function activate(ctx: vscode.ExtensionContext) {
+export function activate(ctx: vscode.ExtensionContext) {
 
-  // ── Auto-start the embedded backend ──────────────────────────
-  vscode.window.showInformationMessage("🚀 AI Copilot starting backend...");
-  await startBackend(ctx.extensionUri, ctx);
-
-  // ── Inline completion provider ────────────────────────────────
+  // ── Inline completion provider (keeps ghost text working if VS Code allows it)
   ctx.subscriptions.push(
     vscode.languages.registerInlineCompletionItemProvider(
       { pattern: "**" },
       new AICompletionProvider()
-    )
-  );
-
-  // ── Chat sidebar ──────────────────────────────────────────────
-  ctx.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(
-      ChatViewProvider.viewType,
-      new ChatViewProvider(ctx.extensionUri)
     )
   );
 
@@ -37,18 +22,23 @@ export async function activate(ctx: vscode.ExtensionContext) {
     vscode.workspace.onDidChangeTextDocument(async (event) => {
       const editor = vscode.window.activeTextEditor;
       if (!editor || event.document !== editor.document) return;
+
+      // Clear previous timer on every keystroke
       if (typingTimer) clearTimeout(typingTimer);
 
       typingTimer = setTimeout(async () => {
         const code = event.document.getText();
         if (code.trim().length < 2) return;
         if (code === lastInsertedText) return;
+
         try {
+          console.log("🟡 auto-triggering completion...");
           await vscode.commands.executeCommand("editor.action.inlineSuggest.trigger");
+          console.log("🟢 suggestion triggered");
         } catch (err) {
-          console.error("auto-complete error:", err);
+          console.error("🔴 auto-complete error:", err);
         }
-      }, 1500);
+      }, 1500); // 1.5 seconds after you stop typing
     })
   );
 
@@ -57,6 +47,12 @@ export async function activate(ctx: vscode.ExtensionContext) {
     vscode.commands.registerCommand("aiCopilot.suggest", async () => {
       const editor = vscode.window.activeTextEditor;
       if (editor) await runDiagnostics(editor);
+    })
+  );
+
+  ctx.subscriptions.push(
+    vscode.commands.registerCommand("aiCopilot.chat", () => {
+      ChatPanel.show(ctx);
     })
   );
 
@@ -90,19 +86,30 @@ export async function activate(ctx: vscode.ExtensionContext) {
   );
 
   ctx.subscriptions.push(
-    vscode.commands.registerCommand("aiCopilot.triggerComplete", async () => {
+    vscode.commands.registerCommand("aiCopilot.explain", async () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) return;
+
+      const selection = editor.selection;
+      const selectedText = editor.document.getText(selection);
+      if (!selectedText.trim()) {
+        vscode.window.showWarningMessage("AI Copilot: Please select some code to explain.");
+        return;
+      }
+
+      // Open chat panel first
+      ChatPanel.show(ctx);
+
+      // Send the explain request to the chat panel
       vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: "AI: Completing..." },
+        { location: vscode.ProgressLocation.Notification, title: "AI: Explaining code..." },
         async () => {
           try {
-            const result = await fetchCompletion(
-              editor.document,
-              editor.selection.active,
+            const explanation = await fetchExplain(
+              selectedText,
               editor.document.languageId
             );
-            await editor.edit((eb) => eb.insert(editor.selection.active, result));
+            ChatPanel.sendExplanation(ctx, selectedText, editor.document.languageId, explanation);
           } catch (err: any) {
             vscode.window.showErrorMessage(`AI Copilot: ${err.message}`);
           }
@@ -111,22 +118,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
     })
   );
 
-  ctx.subscriptions.push(
-    vscode.commands.registerCommand("aiCopilot.openSettings", () => {
-      SettingsPanel.open(ctx.extensionUri, ctx);
-    })
-  );
-
-  ctx.subscriptions.push(
-    vscode.commands.registerCommand("aiCopilot.restartBackend", () => {
-      restartBackend(ctx.extensionUri, ctx);
-      vscode.window.showInformationMessage("🔄 Backend restarting...");
-    })
-  );
-
   console.log("✅ AI Copilot extension active");
 }
 
-export function deactivate() {
-  stopBackend();
-}
+export function deactivate() {}

@@ -1,14 +1,10 @@
 {
   "name": "ai-copilot",
   "displayName": "AI Copilot",
-  "description": "Local AI coding assistant with chat, completions and bug detection",
+  "description": "Local AI-powered code completion using Ollama or cloud LLMs",
   "version": "0.0.1",
-  "publisher": "abhiram-vattikonda",
-  "engines": { "vscode": "^1.110.0" },
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/abhiram-vattikonda/AI-Copilot"
+  "engines": {
+    "vscode": "^1.85.0"
   },
   "categories": [
     "Other"
@@ -18,42 +14,51 @@
   ],
   "main": "./out/extension.js",
   "contributes": {
-    "viewsContainers": {
-      "activitybar": [
+    "menus": {
+      "editor/context": [
         {
-          "id": "ai-copilot",
-          "title": "AI Copilot",
-          "icon": "$(robot)"
-        }
-      ]
-    },
-    "views": {
-      "ai-copilot": [
-        {
-          "type": "webview",
-          "id": "aiCopilot.chatView",
-          "name": "Chat"
+          "command": "aiCopilot.explain",
+          "when": "editorHasSelection",
+          "group": "aiCopilot@1"
         }
       ]
     },
     "commands": [
-      { "command": "aiCopilot.suggest",         "title": "AI: Analyze & suggest improvements" },
-      { "command": "aiCopilot.fix",             "title": "AI: Fix bugs in file" },
-      { "command": "aiCopilot.triggerComplete", "title": "AI: Complete code at cursor" },
-      { "command": "aiCopilot.openSettings",    "title": "AI Copilot: Open Settings" },
-      { "command": "aiCopilot.restartBackend",  "title": "AI Copilot: Restart Backend" }
-    ]
-  },
-  "dependencies": {
-    "ws": "^8.20.0"
-  },
-  "devDependencies": {
-    "@types/vscode": "^1.110.0",
-    "@types/ws": "^8.18.1",
-    "typescript": "^6.0.2"
+      {
+        "command": "aiCopilot.explain",
+        "title": "AI: Explain selected code"
+      },
+      {
+        "command": "aiCopilot.suggest",
+        "title": "AI: Analyze & suggest improvements"
+      },
+      {
+        "command": "aiCopilot.fix",
+        "title": "AI: Fix bugs in file"
+      },
+      {
+        "command": "aiCopilot.chat",
+        "title": "AI: Open chat"
+      }
+    ],
+    "configuration": {
+      "title": "AI Copilot",
+      "properties": {
+        "aiCopilot.backendUrl": {
+          "type": "string",
+          "default": "http://localhost:3000",
+          "description": "URL of the AI Copilot backend"
+        }
+      }
+    }
   },
   "scripts": {
-    "compile": "tsc",
-    "watch": "tsc -watch"
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.2",
+    "@types/vscode": "^1.110.0",
+    "typescript": "^5.7.2"
   }
 }

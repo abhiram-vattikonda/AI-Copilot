@@ -1,9 +1,12 @@
-import * as ollama    from "./providers/ollama.js";
-import * as openai    from "./providers/openai.js";
+import * as ollama from "./providers/ollama.js";
+import * as openaiCompat from "./providers/openaiCompatProvider.js";
 import * as anthropic from "./providers/anthropic.js";
-import * as groq      from "./providers/groq.js";   // ← add this
 
-const providers = { ollama, openai, anthropic, groq };  // ← add groq here
+const providers = {
+  ollama,
+  anthropic,
+  openai_compatible: openaiCompat,
+};
 
 const providerName = process.env.PROVIDER || "ollama";
 const active = providers[providerName];
@@ -17,4 +20,4 @@ if (!active) {
 console.log(`🔌 LLM provider loaded: ${providerName}`);
 
 export const complete = active.complete;
-export const stream   = active.stream;
+export const stream = active.stream;

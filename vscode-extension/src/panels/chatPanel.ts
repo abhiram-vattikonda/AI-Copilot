@@ -1,427 +1,116 @@
 import * as vscode from "vscode";
+import { streamChat, type ChatMessage } from "../services/api";
 
-function backendUrl() {
-  return vscode.workspace
-    .getConfiguration("aiCopilot")
-    .get<string>("backendUrl", "http://localhost:3000");
-}
+export class ChatPanel {
+  private static instance: ChatPanel | undefined;
 
-export class ChatViewProvider implements vscode.WebviewViewProvider {
-  public static readonly viewType = "aiCopilot.chatView";
-  private _view?: vscode.WebviewView;
-
-  constructor(private readonly _extensionUri: vscode.Uri) {}
-
-  resolveWebviewView(
-    webviewView: vscode.WebviewView,
-    _context: vscode.WebviewViewResolveContext,
-    _token: vscode.CancellationToken
+  static sendExplanation(
+    context: vscode.ExtensionContext,
+    code: string,
+    language: string,
+    explanation: string
   ) {
-    this._view = webviewView;
+    // Ensure the panel is open
+    ChatPanel.show(context);
+    if (!ChatPanel.instance) return;
 
-    webviewView.webview.options = {
-      enableScripts: true,
-      localResourceRoots: [this._extensionUri],
-    };
+    const panel = ChatPanel.instance;
+    const userContent = `Explain this ${language} code:\n\`\`\`${language}\n${code}\n\`\`\``;
+    panel.messages.push({ role: "user", content: userContent });
+    panel.messages.push({ role: "assistant", content: explanation });
+    panel.postState();
+  }
 
-    webviewView.webview.html = this._getHtml();
+  static show(context: vscode.ExtensionContext) {
+    if (ChatPanel.instance) {
+      ChatPanel.instance.panel.reveal(vscode.ViewColumn.Beside, true);
+      return;
+    }
+    ChatPanel.instance = new ChatPanel(context);
+  }
 
-    // Handle messages from the webview
-    webviewView.webview.onDidReceiveMessage(async (message: { type: string; text: string; includeCode: boolean; }) => {
-      if (message.type === "userMessage") {
-        await this._handleChat(message.text, message.includeCode);
+  private readonly panel: vscode.WebviewPanel;
+  private messages: ChatMessage[] = [];
+
+  private constructor(context: vscode.ExtensionContext) {
+    this.panel = vscode.window.createWebviewPanel(
+      "aiCopilotChat",
+      "AI Copilot Chat",
+      vscode.ViewColumn.Beside,
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+        localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, "media")],
       }
-      if (message.type === "openSettings") {
-        vscode.commands.executeCommand("aiCopilot.openSettings");
-        }
+    );
+
+    this.panel.webview.html = this.getHtml(this.panel.webview, context.extensionUri);
+
+    this.panel.onDidDispose(() => {
+      ChatPanel.instance = undefined;
     });
+
+    this.panel.webview.onDidReceiveMessage(
+      async (msg: { type: string; text?: string }) => {
+        if (msg.type === "send" && msg.text?.trim()) {
+          const userText = msg.text.trim();
+          this.messages.push({ role: "user", content: userText });
+          this.postState();
+          this.panel.webview.postMessage({ type: "assistantStart" });
+
+          try {
+            let acc = "";
+            await streamChat(this.messages, (token) => {
+              acc += token;
+              this.panel.webview.postMessage({ type: "assistantDelta", token });
+            });
+            this.messages.push({ role: "assistant", content: acc });
+            this.panel.webview.postMessage({ type: "assistantDone" });
+          } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            this.panel.webview.postMessage({ type: "assistantError", message });
+          }
+          this.postState();
+        } else if (msg.type === "explainSelection") {
+          // Trigger the explain command, which uses the active editor's selection
+          vscode.commands.executeCommand("aiCopilot.explain");
+        } else if (msg.type === "clear") {
+          this.messages = [];
+          this.postState();
+        } else if (msg.type === "ready") {
+          this.postState();
+        }
+      },
+      undefined,
+      context.subscriptions
+    );
   }
 
-  private async _handleChat(userText: string, includeCode: boolean) {
-    const editor = vscode.window.activeTextEditor;
-    let context = "";
-
-    if (includeCode && editor) {
-      const code = editor.document.getText();
-      const lang = editor.document.languageId;
-      context = `\n\nCurrent file (${lang}):\n\`\`\`${lang}\n${code}\n\`\`\``;
-    }
-
-    const prompt = `You are an expert coding assistant. Answer clearly and concisely.
-${userText}${context}`;
-
-    try {
-      // Stream the response token by token via WebSocket
-      const ws = new (require("ws"))(`ws://localhost:3000`);
-      let fullResponse = "";
-
-      ws.on("open", () => {
-        ws.send(JSON.stringify({
-          code: prompt,
-          language: "text",
-        }));
-      });
-
-      ws.on("message", (data: Buffer) => {
-        const json = JSON.parse(data.toString());
-        if (json.token) {
-          fullResponse += json.token;
-          this._view?.webview.postMessage({
-            type: "streamToken",
-            token: json.token,
-          });
-        }
-        if (json.done) {
-          ws.close();
-          this._view?.webview.postMessage({ type: "streamDone" });
-        }
-        if (json.error) {
-          ws.close();
-          this._view?.webview.postMessage({
-            type: "error",
-            message: json.error,
-          });
-        }
-      });
-
-      ws.on("error", (err: Error) => {
-        this._view?.webview.postMessage({
-          type: "error",
-          message: `Connection error: ${err.message}`,
-        });
-      });
-    } catch (err: any) {
-      this._view?.webview.postMessage({
-        type: "error",
-        message: err.message,
-      });
-    }
+  private postState() {
+    this.panel.webview.postMessage({ type: "history", messages: this.messages });
   }
 
-  private _getHtml(): string {
+  private getHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {
+    const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "chat.css"));
+    const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "chat.js"));
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-
-  body {
-    font-family: var(--vscode-font-family);
-    font-size: var(--vscode-font-size);
-    color: var(--vscode-foreground);
-    background: var(--vscode-sideBar-background);
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-    overflow: hidden;
-  }
-
-  #messages {
-    flex: 1;
-    overflow-y: auto;
-    padding: 12px 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  .msg {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    max-width: 100%;
-  }
-
-  .msg-label {
-    font-size: 10px;
-    font-weight: 600;
-    text-transform: uppercase;
-    opacity: 0.5;
-    letter-spacing: 0.5px;
-  }
-
-  .msg-bubble {
-    padding: 8px 10px;
-    border-radius: 6px;
-    line-height: 1.5;
-    white-space: pre-wrap;
-    word-break: break-word;
-  }
-
-  .user .msg-label { color: var(--vscode-textLink-foreground); }
-  .user .msg-bubble {
-    background: var(--vscode-textLink-foreground);
-    color: #fff;
-    align-self: flex-end;
-  }
-
-  .assistant .msg-label { color: var(--vscode-foreground); }
-  .assistant .msg-bubble {
-    background: var(--vscode-editor-background);
-    border: 1px solid var(--vscode-panel-border);
-  }
-
-  .error .msg-bubble {
-    background: var(--vscode-inputValidation-errorBackground);
-    border: 1px solid var(--vscode-inputValidation-errorBorder);
-    color: var(--vscode-inputValidation-errorForeground);
-  }
-
-  code {
-    font-family: var(--vscode-editor-font-family);
-    background: var(--vscode-textBlockQuote-background);
-    padding: 1px 4px;
-    border-radius: 3px;
-    font-size: 12px;
-  }
-
-  pre {
-    background: var(--vscode-textBlockQuote-background);
-    border: 1px solid var(--vscode-panel-border);
-    border-radius: 4px;
-    padding: 8px;
-    overflow-x: auto;
-    font-family: var(--vscode-editor-font-family);
-    font-size: 12px;
-    margin-top: 4px;
-  }
-
-  #footer {
-    padding: 8px;
-    border-top: 1px solid var(--vscode-panel-border);
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    background: var(--vscode-sideBar-background);
-  }
-
-  #include-code-row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 11px;
-    opacity: 0.7;
-  }
-
-  #input-row {
-    display: flex;
-    gap: 6px;
-  }
-
-  #input {
-    flex: 1;
-    background: var(--vscode-input-background);
-    color: var(--vscode-input-foreground);
-    border: 1px solid var(--vscode-input-border);
-    border-radius: 4px;
-    padding: 6px 8px;
-    font-family: var(--vscode-font-family);
-    font-size: var(--vscode-font-size);
-    resize: none;
-    outline: none;
-    min-height: 36px;
-    max-height: 120px;
-  }
-
-  #input:focus {
-    border-color: var(--vscode-focusBorder);
-  }
-
-  #send {
-    background: var(--vscode-button-background);
-    color: var(--vscode-button-foreground);
-    border: none;
-    border-radius: 4px;
-    padding: 6px 12px;
-    cursor: pointer;
-    font-size: 13px;
-    white-space: nowrap;
-    align-self: flex-end;
-  }
-
-  #send:hover { background: var(--vscode-button-hoverBackground); }
-  #send:disabled { opacity: 0.5; cursor: not-allowed; }
-
-  .typing-indicator {
-    display: flex;
-    gap: 4px;
-    padding: 8px 10px;
-  }
-
-  .dot {
-    width: 6px; height: 6px;
-    background: var(--vscode-foreground);
-    border-radius: 50%;
-    opacity: 0.4;
-    animation: bounce 1.2s infinite;
-  }
-  .dot:nth-child(2) { animation-delay: 0.2s; }
-  .dot:nth-child(3) { animation-delay: 0.4s; }
-
-  @keyframes bounce {
-    0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
-    40% { transform: translateY(-4px); opacity: 1; }
-  }
-</style>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource};" />
+  <link href="${styleUri}" rel="stylesheet" />
 </head>
 <body>
-
-<div id="messages">
-  <div class="msg assistant">
-    <span class="msg-label">AI Copilot</span>
-    <div class="msg-bubble">👋 Hi! I'm your AI coding assistant. Ask me anything about your code, or check "Include current file" to give me context.</div>
+  <div class="toolbar">
+    <button type="button" id="explain">Explain selection</button>
+    <button type="button" id="clear">Clear chat</button>
   </div>
-</div>
-
-<div id="footer">
-  <div id="toolbar">
-    <button id="settingsBtn" title="Open Settings">⚙ Settings</button>
+  <div id="log" class="log"></div>
+  <div class="input-row">
+    <textarea id="input" rows="3" placeholder="Message… (Shift+Enter for newline)"></textarea>
+    <button type="button" id="send">Send</button>
   </div>
-
-  <div id="include-code-row">
-    <input type="checkbox" id="include-code" checked/>
-    <label for="include-code">Include current file as context</label>
-  </div>
-  <div id="input-row">
-    <textarea id="input" placeholder="Ask anything about your code..." rows="1"></textarea>
-    <button id="send">Send</button>
-  </div>
-
-  
-</div>
-
-<script>
-  const vscode  = acquireVsCodeApi();
-  const msgs    = document.getElementById('messages');
-  const input   = document.getElementById('input');
-  const sendBtn = document.getElementById('send');
-  const includeCode = document.getElementById('include-code');
-
-  let isStreaming = false;
-  let currentBubble = null;
-
-  function scrollBottom() {
-    msgs.scrollTop = msgs.scrollHeight;
-  }
-
-  function addMessage(role, text = "") {
-    const wrap   = document.createElement('div');
-    wrap.className = \`msg \${role}\`;
-
-    const label  = document.createElement('span');
-    label.className = 'msg-label';
-    label.textContent = role === 'user' ? 'You' : role === 'error' ? 'Error' : 'AI Copilot';
-
-    const bubble = document.createElement('div');
-    bubble.className = 'msg-bubble';
-    bubble.textContent = text;
-
-    wrap.appendChild(label);
-    wrap.appendChild(bubble);
-    msgs.appendChild(wrap);
-    scrollBottom();
-    return bubble;
-  }
-
-  function addTypingIndicator() {
-    const wrap = document.createElement('div');
-    wrap.className = 'msg assistant';
-    wrap.id = 'typing';
-
-    const label = document.createElement('span');
-    label.className = 'msg-label';
-    label.textContent = 'AI Copilot';
-
-    const indicator = document.createElement('div');
-    indicator.className = 'typing-indicator';
-    indicator.innerHTML = '<div class="dot"></div><div class="dot"></div><div class="dot"></div>';
-
-    wrap.appendChild(label);
-    wrap.appendChild(indicator);
-    msgs.appendChild(wrap);
-    scrollBottom();
-    return wrap;
-  }
-
-  function removeTypingIndicator() {
-    const el = document.getElementById('typing');
-    if (el) el.remove();
-  }
-
-  function send() {
-    const text = input.value.trim();
-    if (!text || isStreaming) return;
-
-    addMessage('user', text);
-    input.value = '';
-    input.style.height = 'auto';
-    isStreaming = true;
-    sendBtn.disabled = true;
-
-    const typing = addTypingIndicator();
-
-    vscode.postMessage({
-      type: 'userMessage',
-      text,
-      includeCode: includeCode.checked,
-    });
-  }
-
-  // Handle streamed response from extension
-  window.addEventListener('message', (event) => {
-    const msg = event.data;
-
-    if (msg.type === 'streamToken') {
-      if (!currentBubble) {
-        removeTypingIndicator();
-        currentBubble = addMessage('assistant');
-      }
-      currentBubble.textContent += msg.token;
-      scrollBottom();
-    }
-
-    if (msg.type === 'streamDone') {
-      currentBubble = null;
-      isStreaming = false;
-      sendBtn.disabled = false;
-    }
-
-    if (msg.type === 'error') {
-      removeTypingIndicator();
-      addMessage('error', msg.message);
-      currentBubble = null;
-      isStreaming = false;
-      sendBtn.disabled = false;
-    }
-  });
-
-  // Send on Enter (Shift+Enter for newline)
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      send();
-    }
-  });
-
-  // Auto-resize textarea
-  input.addEventListener('input', () => {
-    input.style.height = 'auto';
-    input.style.height = Math.min(input.scrollHeight, 120) + 'px';
-  });
-
-  sendBtn.addEventListener('click', send);
-
-  window.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('settingsBtn').addEventListener('click', () => {
-    vscode.postMessage({ type: 'openSettings' });
-  });
-});
-});
-</script>
-
-
+  <script src="${scriptUri}"></script>
 </body>
 </html>`;
   }

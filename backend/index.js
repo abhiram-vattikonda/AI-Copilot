@@ -1,11 +1,10 @@
 import "dotenv/config";
 import express from "express";
-import { createServer } from "http";
 import cors from "cors";
 import completeRouter from "./src/routes/complete.js";
 import suggestRouter from "./src/routes/suggest.js";
 import healthRouter from "./src/routes/health.js";
-import { setupWS } from "./src/websocket/handler.js";
+import chatRouter from "./src/routes/chat.js";
 import { logger } from "./src/services/logger.js";
 
 const app = express();
@@ -23,12 +22,10 @@ app.use((req, _res, next) => {
 app.use("/complete", completeRouter);
 app.use("/suggest", suggestRouter);
 app.use("/health", healthRouter);
-
-const server = createServer(app);
-setupWS(server);
+app.use("/chat", chatRouter);
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
+app.listen(PORT, () => {
   const provider = process.env.PROVIDER || "ollama";
   console.log(`✅ Backend running on :${PORT}`);
   console.log(`🤖 Provider: ${provider}`);
