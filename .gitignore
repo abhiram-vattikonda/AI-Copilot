@@ -7,4 +7,3 @@ node_modules/
 
 # Generated Assets and Tests
 assets/
-backend/test_endpoints.js
