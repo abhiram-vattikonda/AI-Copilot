@@ -1,0 +1,10 @@
+# Node dependencies
+node_modules/
+
+# Environment files
+.env
+.env.*
+
+# Generated Assets and Tests
+assets/
+backend/test_endpoints.js

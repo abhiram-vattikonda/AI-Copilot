@@ -1,0 +1,62 @@
+{
+  "name": "ai-copilot",
+  "displayName": "AI Copilot",
+  "description": "Local AI-powered code completion using Ollama or cloud LLMs",
+  "version": "0.0.1",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "menus": {
+      "editor/context": [
+        {
+          "command": "aiCopilot.explain",
+          "when": "editorHasSelection",
+          "group": "aiCopilot@1"
+        }
+      ]
+    },
+    "commands": [
+      { "command": "aiCopilot.switchModel", "title": "AI: Switch model" },
+      { "command": "aiCopilot.suggest",     "title": "AI: Analyze & suggest improvements" },
+      { "command": "aiCopilot.fix",         "title": "AI: Fix bugs in file" },
+      { "command": "aiCopilot.chat",        "title": "AI: Open chat" },
+      { "command": "aiCopilot.explain",     "title": "AI: Explain selected code" }
+    ],
+    "configuration": {
+      "title": "AI Copilot",
+      "properties": {
+        "aiCopilot.backendUrl": {
+          "type": "string",
+          "default": "http://localhost:3000",
+          "description": "URL of the AI Copilot backend"
+        },
+        "aiCopilot.activeProviderKey": {
+          "type": "string",
+          "default": "",
+          "description": "Active provider key (e.g. groq, ollama). Set automatically by AI: Switch model."
+        },
+        "aiCopilot.activeModel": {
+          "type": "string",
+          "default": "",
+          "description": "Active model name. Set automatically by AI: Switch model."
+        },
+        "aiCopilot.activeLabel": {
+          "type": "string",
+          "default": "",
+          "description": "Display label for the active provider. Set automatically by AI: Switch model."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.2",
+    "@types/vscode": "^1.110.0",
+    "typescript": "^5.7.2"
+  }
+}

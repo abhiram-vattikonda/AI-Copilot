@@ -1,0 +1,183 @@
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 8px;
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-foreground);
+  background: var(--vscode-editor-background);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* ── Toolbar ─────────────────────────────────────────────────── */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  flex-shrink: 0;
+}
+.toolbar-spacer { flex: 1; }
+
+.toolbar button {
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+  border: 1px solid var(--vscode-widget-border);
+  padding: 4px 10px;
+  cursor: pointer;
+  border-radius: 3px;
+  font-size: var(--vscode-font-size);
+  white-space: nowrap;
+}
+.toolbar button:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+/* Model pill — stands out as primary action */
+#model-pill {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border: none;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-weight: 500;
+  max-width: 260px;
+  overflow: hidden;
+}
+#model-pill:hover {
+  background: var(--vscode-button-hoverBackground);
+}
+#model-pill-icon {
+  font-size: 0.9em;
+  opacity: 0.85;
+  flex-shrink: 0;
+}
+#model-pill-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#explain {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border: none;
+}
+
+/* ── Chat log ────────────────────────────────────────────────── */
+.log {
+  flex: 1;
+  overflow-y: auto;
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: 4px;
+  padding: 8px;
+  margin-bottom: 8px;
+}
+
+.bubble {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  word-break: break-word;
+}
+.bubble.user {
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, transparent);
+}
+.bubble.assistant {
+  background: var(--vscode-editor-inactiveSelectionBackground);
+}
+.bubble.error {
+  color: var(--vscode-errorForeground);
+  border: 1px solid var(--vscode-inputValidation-errorBorder);
+}
+
+.role {
+  font-size: 0.85em;
+  opacity: 0.7;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.message-body .md-text { white-space: pre-wrap; }
+
+/* ── Code blocks ─────────────────────────────────────────────── */
+.code-block {
+  margin: 10px 0;
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--vscode-textCodeBlock-background, var(--vscode-editor-background));
+}
+.code-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--vscode-widget-border);
+  background: var(--vscode-sideBarSectionHeader-background, var(--vscode-editor-background));
+}
+.code-lang {
+  font-size: 0.75em;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.85;
+  font-family: var(--vscode-editor-font-family);
+}
+.copy-code {
+  font-size: 0.75em;
+  padding: 2px 8px;
+  cursor: pointer;
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: 4px;
+}
+.copy-code:hover { background: var(--vscode-toolbar-hoverBackground); }
+.code-block pre {
+  margin: 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  max-height: 320px;
+  font-family: var(--vscode-editor-font-family);
+  font-size: calc(var(--vscode-font-size) * 0.92);
+  line-height: 1.45;
+}
+.code-block code { font-family: inherit; color: var(--vscode-editor-foreground); }
+
+/* ── Input row ───────────────────────────────────────────────── */
+.input-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  flex-shrink: 0;
+}
+#input {
+  flex: 1;
+  resize: vertical;
+  min-height: 60px;
+  font-family: inherit;
+  font-size: inherit;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border);
+  padding: 8px;
+  border-radius: 4px;
+}
+#send {
+  padding: 8px 16px;
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: inherit;
+}
+#send:disabled { opacity: 0.5; cursor: not-allowed; }
